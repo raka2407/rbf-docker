@@ -8,6 +8,7 @@ RUN apt-get install -y wget \
                     python3-pip && \
      ln -s /usr/bin/python3.6 /usr/bin/python
 
+ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y mono-devel \
                                      gettext-base
                                 
