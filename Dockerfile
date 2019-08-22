@@ -1,34 +1,61 @@
-FROM ubuntu:latest
+FROM fedora:30
 
-RUN apt-get update \
-	&& apt-get install -y build-essential libssl-dev libffi-dev python3 \
-		python3-pip  gcc phantomjs firefox \
-		xvfb zip wget ca-certificates ntpdate \
-		libnss3-dev libxss1 libappindicator3-1 libindicator7 gconf-service libgconf-2-4 libpango1.0-0 xdg-utils fonts-liberation \
-	    && rm -rf /var/lib/apt/lists/*
-	
-ENV DEBIAN_FRONTEND=noninteractive
+# Setup X Window Virtual Framebuffer
+ENV SCREEN_COLOUR_DEPTH 24
+ENV SCREEN_HEIGHT 1080
+ENV SCREEN_WIDTH 1920
 
-RUN apt-get update && apt-get install -y mono-devel \
-                                     gettext-base
+# Set number of threads for parallel execution
+# By default, no parallelisation
+ENV ROBOT_THREADS 1
 
-COPY requirements.txt .
+# Dependency versions
+ENV CHROMIUM_VERSION 75.0.*
+ENV FIREFOX_VERSION 68.0*
+ENV GECKO_DRIVER_VERSION v0.22.0
+ENV PYTHON_PIP_VERSION 19.0*
+ENV XVFB_VERSION 1.20.*
 
-RUN pip3 install -r requirements.txt
+USER root
 
-RUN wget https://github.com/mozilla/geckodriver/releases/download/v0.24.0/geckodriver-v0.24.0-linux64.tar.gz \
-	&& tar xvzf geckodriver-*.tar.gz \
-	&& rm geckodriver-*.tar.gz \
-	&& mv geckodriver /usr/local/bin \
-	&& chmod a+x /usr/local/bin/geckodriver
 
-RUN wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
-	&& dpkg -i google-chrome*.deb \
-	&& rm google-chrome*.deb
+# Prepare binaries to be executed
+COPY bin/chromedriver.sh /opt/robotframework/bin/chromedriver
+COPY bin/chromium-browser.sh /opt/robotframework/bin/chromium-browser
+COPY bin/run-tests-in-virtual-screen.sh /opt/robotframework/bin/
 
-RUN wget https://chromedriver.storage.googleapis.com/74.0.3729.6/chromedriver_linux64.zip \
-	&& unzip chromedriver_linux64.zip \
-	&& rm chromedriver_linux64.zip \
-	&& mv chromedriver /usr/local/bin \
-	&& chmod +x /usr/local/bin/chromedriver
+# Install system dependencies
+RUN dnf upgrade -y \
+  && dnf install -y \
+    chromedriver-$CHROMIUM_VERSION \
+    chromium-$CHROMIUM_VERSION \
+    firefox-$FIREFOX_VERSION \
+    python3-pip-$PYTHON_PIP_VERSION \
+    xauth \
+    xorg-x11-server-Xvfb-$XVFB_VERSION \
+    which \
+    wget \
+  && dnf clean all -y \
+  && mv /usr/lib64/chromium-browser/chromium-browser /usr/lib64/chromium-browser/chromium-browser-original \
+  && ln -sfv /opt/robotframework/bin/chromium-browser /usr/lib64/chromium-browser/chromium-browser
+# FIXME: above is a workaround, as the path is ignored
 
+# Make python 3 the default python      
+RUN alternatives --install /usr/bin/python python /usr/bin/python3.7 2
+
+# Install Robot Framework
+RUN pip3 install --no-cache-dir rbf
+
+
+# Download Gecko drivers directly from the GitHub repository
+RUN wget -q "https://github.com/mozilla/geckodriver/releases/download/$GECKO_DRIVER_VERSION/geckodriver-$GECKO_DRIVER_VERSION-linux64.tar.gz" \
+      && tar xzf geckodriver-$GECKO_DRIVER_VERSION-linux64.tar.gz \
+      && mkdir -p /opt/robotframework/drivers/ \
+      && mv geckodriver /opt/robotframework/drivers/geckodriver \
+      && rm geckodriver-$GECKO_DRIVER_VERSION-linux64.tar.gz
+
+RUN chmod 777 /opt/robotframework/bin/chromium-browser
+RUN chmod 777 /opt/robotframework/bin/run-tests-in-virtual-screen.sh
+
+# Update system path
+ENV PATH=/opt/robotframework/bin:/opt/robotframework/drivers:$PATH
