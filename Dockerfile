@@ -1,8 +1,24 @@
-FROM python:3.7-alpine3.10
+ARG PYTHON_MAJOR=3
+FROM alpine as intermediate
 
-# Setup volume for output
-#VOLUME /opt/robotframework/reports
+RUN apk update && apk add wget gcc build-base libxt-dev libx11-dev xorg-server-dev libxmu-dev libxaw-dev bdftopcf ncurses-dev tcl tcl-dev mkfontdir && \
+	wget http://x3270.bgp.nu/download/03.06/suite3270-3.6ga5-src.tgz && \ 
+	tar xzvf suite3270-3.6ga5-src.tgz && \
+	cd suite3270-3.6 && \
+	./configure && \
+	make x3270
 
+FROM python:${PYTHON_MAJOR}-alpine
+
+COPY --from=intermediate /suite3270-3.6/obj/x86_64-unknown-linux-gnu/x3270 /usr/lib/x3270
+
+RUN apk update && apk add xvfb libxaw && rm -rf /var/cache/apk/* && \
+    pip install robotframework six robotremoteserver robotframework-seleniumlibrary && \
+	mkdir /reports
+
+RUN	ln -s /usr/lib/x3270/x3270 /usr/bin/x3270
+ARG PYTHON_MAJOR
+COPY source /usr/local/lib/python${PYTHON_MAJOR}.7/site-packages/rbfZOS
 
 # Setup X Window Virtual Framebuffer
 ENV SCREEN_COLOUR_DEPTH 24
@@ -35,7 +51,6 @@ COPY bin/run-tests-in-virtual-screen.sh /opt/robotframework/bin/
 
 RUN chmod 777 /opt/robotframework/bin/chromium-browser
 RUN chmod 777 /opt/robotframework/bin/run-tests-in-virtual-screen.sh
-
 
 # Install system dependencies
 RUN echo "http://dl-cdn.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositories \
@@ -86,6 +101,5 @@ RUN echo "http://dl-cdn.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositori
 # Update system path
 ENV PATH=/opt/robotframework/bin:/opt/robotframework/drivers:$PATH
 
-# Execute all robot tests
-#CMD ["run-tests-in-virtual-screen.sh"]
+#ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/bin/sh"]
